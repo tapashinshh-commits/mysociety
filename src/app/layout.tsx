@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import AuthListener from "@/components/AuthListener";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,7 +36,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} antialiased`}>{children}</body>
+      <body className={`${geistSans.variable} antialiased`}>
+        <AuthListener />
+        {children}
+      </body>
     </html>
   );
 }
