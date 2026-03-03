@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Users,
   Bell,
+  UserCircle,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -114,6 +115,12 @@ export default function DashboardPage() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <a
+              href="/profile"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+            >
+              <UserCircle size={20} />
+            </a>
             <button className="relative rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground">
               <Bell size={20} />
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />
