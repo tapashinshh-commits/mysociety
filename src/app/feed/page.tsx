@@ -5,14 +5,14 @@ import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
-  Filter,
   MessageCircle,
   HelpCircle,
   AlertTriangle,
   Calendar,
+  Mail,
 } from "lucide-react";
 import CreatePost from "@/components/CreatePost";
-import FeedPost, { type Post } from "@/components/FeedPost";
+import FeedPost, { type Post, type Comment } from "@/components/FeedPost";
 
 const FILTERS = [
   { value: "all", label: "All", icon: null },
@@ -22,7 +22,17 @@ const FILTERS = [
   { value: "event", label: "Events", icon: Calendar },
 ] as const;
 
-// Demo posts for now — will be replaced with Supabase queries
+// Demo comments
+const demoComments = (names: string[], texts: string[], baseTime: number): Comment[] =>
+  names.map((name, i) => ({
+    id: `c${baseTime}-${i}`,
+    author: name,
+    content: texts[i],
+    timestamp: new Date(Date.now() - baseTime + i * 60000).toISOString(),
+    likes: Math.floor(Math.random() * 5),
+    liked: false,
+  }));
+
 const DEMO_POSTS: Post[] = [
   {
     id: "1",
@@ -32,8 +42,17 @@ const DEMO_POSTS: Post[] = [
     author: "secretary",
     timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     likes: 12,
-    comments: 3,
+    comments: demoComments(
+      ["amit_501", "priya_204", "rahul_105"],
+      [
+        "Thanks for the heads up! Will store extra water tonight.",
+        "Again? This is the 3rd time this month 😤",
+        "Can we get at least 24 hours advance notice next time?",
+      ],
+      1000 * 60 * 20
+    ),
     liked: false,
+    shared: false,
   },
   {
     id: "2",
@@ -43,8 +62,19 @@ const DEMO_POSTS: Post[] = [
     author: "priya_204",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     likes: 8,
-    comments: 5,
+    comments: demoComments(
+      ["neha_c302", "sunita_a302", "guard_1", "rahul_105", "priya_204"],
+      [
+        "I think I saw a grey cat near the garden area around 6pm!",
+        "Oh no! I'll keep an eye out. Hope Mitthu comes back soon 🙏",
+        "Madam, I'll check CCTV footage from yesterday evening.",
+        "Try putting her food bowl outside your flat door. Cats usually come back for food.",
+        "Thank you everyone! Guard bhaiya, please do check the CCTV. 🙏",
+      ],
+      1000 * 60 * 60
+    ),
     liked: false,
+    shared: false,
   },
   {
     id: "3",
@@ -54,8 +84,18 @@ const DEMO_POSTS: Post[] = [
     author: "rahul_105",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
     likes: 3,
-    comments: 7,
+    comments: demoComments(
+      ["amit_501", "treasurer", "vikram_a105", "sunita_a302"],
+      [
+        "Try Sharma Electric — 98765 11111. He did my whole flat rewiring last month. Very reasonable.",
+        "Society has an empanelled electrician. Contact office for his number.",
+        "Avoid the guy from the market. He charged me ₹2000 for changing a switch 😅",
+        "+1 for Sharma Electric. He's been working in this society for years.",
+      ],
+      1000 * 60 * 60 * 3
+    ),
     liked: false,
+    shared: false,
   },
   {
     id: "4",
@@ -65,8 +105,17 @@ const DEMO_POSTS: Post[] = [
     author: "cultural_committee",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
     likes: 24,
-    comments: 11,
+    comments: demoComments(
+      ["priya_204", "neha_c302", "amit_501"],
+      [
+        "Yay! Can't wait! Will there be organic colors this year?",
+        "Kids are so excited! What about the thandai stall? 🥛",
+        "Please make sure we have enough dustbins this time. Last year was messy.",
+      ],
+      1000 * 60 * 60 * 6
+    ),
     liked: false,
+    shared: false,
   },
   {
     id: "5",
@@ -76,8 +125,16 @@ const DEMO_POSTS: Post[] = [
     author: "maintenance",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
     likes: 5,
-    comments: 2,
+    comments: demoComments(
+      ["vikram_a105", "sunita_a302"],
+      [
+        "How long will this take? Elderly residents need the lift urgently.",
+        "Can B-block lift timings be extended till A-block is fixed?",
+      ],
+      1000 * 60 * 60 * 10
+    ),
     liked: false,
+    shared: false,
   },
   {
     id: "6",
@@ -87,8 +144,17 @@ const DEMO_POSTS: Post[] = [
     author: "treasurer",
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     likes: 6,
-    comments: 4,
+    comments: demoComments(
+      ["rahul_105", "amit_501", "treasurer"],
+      [
+        "Can we get a proper breakdown of expenses this month?",
+        "Paid! Transaction ID: UPI123456. Please confirm receipt.",
+        "@amit_501 Received, thank you! @rahul_105 Expense sheet will be shared on WhatsApp group.",
+      ],
+      1000 * 60 * 60 * 20
+    ),
     liked: false,
+    shared: false,
   },
 ];
 
@@ -111,6 +177,8 @@ export default function FeedPage() {
     });
   }, []);
 
+  const currentUser = user?.email?.split("@")[0] || "user";
+
   const handleNewPost = (newPost: {
     type: Post["type"];
     content: string;
@@ -121,8 +189,9 @@ export default function FeedPage() {
       ...newPost,
       timestamp: new Date().toISOString(),
       likes: 0,
-      comments: 0,
+      comments: [],
       liked: false,
+      shared: false,
     };
     setPosts((prev) => [post, ...prev]);
   };
@@ -131,14 +200,72 @@ export default function FeedPage() {
     setPosts((prev) =>
       prev.map((p) =>
         p.id === id
+          ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 }
+          : p
+      )
+    );
+  };
+
+  const handleComment = (postId: string, content: string) => {
+    const newComment: Comment = {
+      id: Date.now().toString(),
+      author: currentUser,
+      content,
+      timestamp: new Date().toISOString(),
+      likes: 0,
+      liked: false,
+    };
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId ? { ...p, comments: [...p.comments, newComment] } : p
+      )
+    );
+  };
+
+  const handleCommentLike = (postId: string, commentId: string) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
           ? {
               ...p,
-              liked: !p.liked,
-              likes: p.liked ? p.likes - 1 : p.likes + 1,
+              comments: p.comments.map((c) =>
+                c.id === commentId
+                  ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 }
+                  : c
+              ),
             }
           : p
       )
     );
+  };
+
+  const handleDeleteComment = (postId: string, commentId: string) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) }
+          : p
+      )
+    );
+  };
+
+  const handleShare = (id: string) => {
+    setPosts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, shared: true } : p))
+    );
+    // Copy link or native share
+    if (navigator.share) {
+      const post = posts.find((p) => p.id === id);
+      navigator.share({
+        title: "MySociety Post",
+        text: post?.content.slice(0, 100),
+        url: window.location.href,
+      });
+    }
+  };
+
+  const handleDM = (author: string) => {
+    window.location.href = `/messages?to=${author}`;
   };
 
   const filtered =
@@ -153,9 +280,7 @@ export default function FeedPage() {
   }
 
   if (!user) {
-    if (typeof window !== "undefined") {
-      window.location.href = "/auth";
-    }
+    if (typeof window !== "undefined") window.location.href = "/auth";
     return null;
   }
 
@@ -175,9 +300,13 @@ export default function FeedPage() {
               Community Feed
             </h1>
           </div>
-          <button className="rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground">
-            <Filter size={18} />
-          </button>
+          <a
+            href="/messages"
+            className="relative rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground"
+          >
+            <Mail size={18} />
+            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-danger" />
+          </a>
         </div>
       </nav>
 
@@ -212,17 +341,24 @@ export default function FeedPage() {
         <div className="space-y-3">
           {filtered.length === 0 ? (
             <div className="rounded-xl border border-border bg-surface p-8 text-center">
-              <MessageCircle
-                size={32}
-                className="mx-auto mb-2 text-muted"
-              />
+              <MessageCircle size={32} className="mx-auto mb-2 text-muted" />
               <p className="text-sm text-muted">
                 No posts yet. Be the first to share!
               </p>
             </div>
           ) : (
             filtered.map((post) => (
-              <FeedPost key={post.id} post={post} onLike={handleLike} />
+              <FeedPost
+                key={post.id}
+                post={post}
+                currentUser={currentUser}
+                onLike={handleLike}
+                onComment={handleComment}
+                onCommentLike={handleCommentLike}
+                onDeleteComment={handleDeleteComment}
+                onShare={handleShare}
+                onDM={handleDM}
+              />
             ))
           )}
         </div>

@@ -13,6 +13,7 @@ import {
   Users,
   Bell,
   UserCircle,
+  Mail,
 } from "lucide-react";
 
 export default function DashboardPage() {
@@ -58,6 +59,14 @@ export default function DashboardPage() {
       color: "text-primary",
       bg: "bg-primary/10",
       href: "/feed",
+    },
+    {
+      icon: Mail,
+      title: "Messages",
+      desc: "Direct messages & chats",
+      color: "text-primary",
+      bg: "bg-primary/10",
+      href: "/messages",
     },
     {
       icon: Calendar,

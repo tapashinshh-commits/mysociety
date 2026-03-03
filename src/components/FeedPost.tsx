@@ -10,6 +10,10 @@ import {
   Heart,
   MessageSquare,
   MoreHorizontal,
+  Share2,
+  Send,
+  Trash2,
+  Mail,
 } from "lucide-react";
 
 const TYPE_CONFIG = {
@@ -43,20 +47,37 @@ const TYPE_CONFIG = {
   },
 } as const;
 
+export interface Comment {
+  id: string;
+  author: string;
+  content: string;
+  timestamp: string;
+  likes: number;
+  liked: boolean;
+}
+
 export interface Post {
   id: string;
   type: "general" | "question" | "alert" | "event";
   content: string;
   author: string;
+  authorAvatar?: string;
   timestamp: string;
   likes: number;
-  comments: number;
+  comments: Comment[];
   liked: boolean;
+  shared: boolean;
 }
 
 interface FeedPostProps {
   post: Post;
+  currentUser: string;
   onLike: (id: string) => void;
+  onComment: (postId: string, content: string) => void;
+  onCommentLike: (postId: string, commentId: string) => void;
+  onDeleteComment: (postId: string, commentId: string) => void;
+  onShare: (id: string) => void;
+  onDM: (author: string) => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -74,10 +95,26 @@ function timeAgo(dateStr: string): string {
   });
 }
 
-export default function FeedPost({ post, onLike }: FeedPostProps) {
+export default function FeedPost({
+  post,
+  currentUser,
+  onLike,
+  onComment,
+  onCommentLike,
+  onDeleteComment,
+  onShare,
+  onDM,
+}: FeedPostProps) {
   const [showComments, setShowComments] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [showMenu, setShowMenu] = useState(false);
   const config = TYPE_CONFIG[post.type];
-  const Icon = config.icon;
+
+  const handleSubmitComment = () => {
+    if (!commentText.trim()) return;
+    onComment(post.id, commentText.trim());
+    setCommentText("");
+  };
 
   return (
     <article className="rounded-xl border border-border bg-surface transition-colors hover:border-border/80">
@@ -98,12 +135,43 @@ export default function FeedPost({ post, onLike }: FeedPostProps) {
                 {config.label}
               </span>
             </div>
-            <span className="text-xs text-muted">{timeAgo(post.timestamp)}</span>
+            <span className="text-xs text-muted">
+              {timeAgo(post.timestamp)}
+            </span>
           </div>
         </div>
-        <button className="rounded-lg p-1 text-muted transition-colors hover:bg-surface-hover hover:text-foreground">
-          <MoreHorizontal size={16} />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="rounded-lg p-1 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-8 z-10 w-40 rounded-lg border border-border bg-surface py-1 shadow-lg">
+              <button
+                onClick={() => {
+                  onDM(post.author);
+                  setShowMenu(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-surface-hover"
+              >
+                <Mail size={14} />
+                Message {post.author}
+              </button>
+              <button
+                onClick={() => {
+                  onShare(post.id);
+                  setShowMenu(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-surface-hover"
+              >
+                <Share2 size={14} />
+                Share Post
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -120,17 +188,27 @@ export default function FeedPost({ post, onLike }: FeedPostProps) {
       </div>
 
       {/* Stats */}
-      {(post.likes > 0 || post.comments > 0) && (
+      {(post.likes > 0 || post.comments.length > 0) && (
         <div className="flex items-center gap-4 px-4 pb-2 text-xs text-muted">
           {post.likes > 0 && (
             <span className="flex items-center gap-1">
-              <ThumbsUp size={12} className="text-primary" />
+              <Heart size={12} className="fill-primary text-primary" />
               {post.likes}
             </span>
           )}
-          {post.comments > 0 && (
-            <span>
-              {post.comments} comment{post.comments !== 1 ? "s" : ""}
+          {post.comments.length > 0 && (
+            <button
+              onClick={() => setShowComments(true)}
+              className="hover:text-foreground"
+            >
+              {post.comments.length} comment
+              {post.comments.length !== 1 ? "s" : ""}
+            </button>
+          )}
+          {post.shared && (
+            <span className="flex items-center gap-1">
+              <Share2 size={12} />
+              Shared
             </span>
           )}
         </div>
@@ -146,7 +224,11 @@ export default function FeedPost({ post, onLike }: FeedPostProps) {
               : "text-muted hover:bg-surface-hover hover:text-foreground"
           }`}
         >
-          {post.liked ? <Heart size={16} className="fill-primary" /> : <ThumbsUp size={16} />}
+          {post.liked ? (
+            <Heart size={16} className="fill-primary" />
+          ) : (
+            <ThumbsUp size={16} />
+          )}
           {post.liked ? "Liked" : "Like"}
         </button>
         <button
@@ -156,16 +238,98 @@ export default function FeedPost({ post, onLike }: FeedPostProps) {
           <MessageSquare size={16} />
           Comment
         </button>
+        <button
+          onClick={() => onShare(post.id)}
+          className={`flex flex-1 items-center justify-center gap-1.5 border-l border-border py-2.5 text-xs font-medium transition-colors ${
+            post.shared
+              ? "text-success"
+              : "text-muted hover:bg-surface-hover hover:text-foreground"
+          }`}
+        >
+          <Share2 size={16} />
+          Share
+        </button>
       </div>
 
-      {/* Comment Input (collapsed for now) */}
+      {/* Comments Section */}
       {showComments && (
-        <div className="border-t border-border p-3">
-          <input
-            type="text"
-            placeholder="Write a comment..."
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+        <div className="border-t border-border">
+          {/* Existing Comments */}
+          {post.comments.length > 0 && (
+            <div className="max-h-64 space-y-0 overflow-y-auto">
+              {post.comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className="flex gap-2.5 border-b border-border/50 px-4 py-3 last:border-b-0"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                    {comment.author.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="rounded-lg bg-surface-hover px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-foreground">
+                          {comment.author}
+                        </span>
+                        <span className="text-[10px] text-muted">
+                          {timeAgo(comment.timestamp)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs leading-relaxed text-foreground">
+                        {comment.content}
+                      </p>
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 pl-1">
+                      <button
+                        onClick={() => onCommentLike(post.id, comment.id)}
+                        className={`flex items-center gap-1 text-[10px] font-medium ${
+                          comment.liked
+                            ? "text-primary"
+                            : "text-muted hover:text-foreground"
+                        }`}
+                      >
+                        <ThumbsUp size={10} />
+                        {comment.likes > 0 && comment.likes}
+                        {comment.liked ? " Liked" : " Like"}
+                      </button>
+                      {comment.author === currentUser && (
+                        <button
+                          onClick={() =>
+                            onDeleteComment(post.id, comment.id)
+                          }
+                          className="flex items-center gap-1 text-[10px] text-muted hover:text-danger"
+                        >
+                          <Trash2 size={10} />
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Comment Input */}
+          <div className="flex items-center gap-2 p-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+              {currentUser.charAt(0).toUpperCase()}
+            </div>
+            <input
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmitComment()}
+              placeholder="Write a comment..."
+              className="flex-1 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={handleSubmitComment}
+              disabled={!commentText.trim()}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-primary-hover disabled:opacity-30"
+            >
+              <Send size={12} />
+            </button>
+          </div>
         </div>
       )}
     </article>
