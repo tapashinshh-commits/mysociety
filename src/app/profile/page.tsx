@@ -24,6 +24,7 @@ interface ProfileData {
   fullName: string;
   flatNo: string;
   block: string;
+  floor: string;
   societyName: string;
   mobile: string;
   email: string;
@@ -32,7 +33,50 @@ interface ProfileData {
   avatarUrl: string | null;
 }
 
-const BLOCKS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const BLOCKS_TOWERS = [
+  "A-Block",
+  "B-Block",
+  "C-Block",
+  "D-Block",
+  "E-Block",
+  "F-Block",
+  "G-Block",
+  "H-Block",
+  "Tower 1",
+  "Tower 2",
+  "Tower 3",
+  "Tower 4",
+  "Tower 5",
+  "Tower 6",
+  "Tower 7",
+  "Tower 8",
+  "Tower 9",
+  "Tower 10",
+];
+
+const FLOORS = [
+  "Ground",
+  "1st",
+  "2nd",
+  "3rd",
+  "4th",
+  "5th",
+  "6th",
+  "7th",
+  "8th",
+  "9th",
+  "10th",
+  "11th",
+  "12th",
+  "13th",
+  "14th",
+  "15th",
+  "16th",
+  "17th",
+  "18th",
+  "19th",
+  "20th",
+];
 
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -48,7 +92,8 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData>({
     fullName: "",
     flatNo: "",
-    block: "A",
+    block: "",
+    floor: "",
     societyName: "",
     mobile: "",
     email: "",
@@ -249,8 +294,50 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Flat & Block */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Society Name (Dropdown) */}
+          <div className="rounded-xl border border-border bg-surface p-4">
+            <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
+              <Building2 size={14} />
+              Society / Apartment Name
+            </label>
+            {editing ? (
+              <select
+                value={profile.societyName}
+                onChange={(e) => handleChange("societyName", e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">Select your society</option>
+                <option value="Green Valley Apartments">Green Valley Apartments</option>
+                <option value="Sunshine Residency">Sunshine Residency</option>
+                <option value="Royal Heights">Royal Heights</option>
+                <option value="Palm Grove Society">Palm Grove Society</option>
+                <option value="Lotus Park">Lotus Park</option>
+                <option value="Shanti Nagar CHS">Shanti Nagar CHS</option>
+                <option value="Prestige Towers">Prestige Towers</option>
+                <option value="Godrej Garden City">Godrej Garden City</option>
+                <option value="Hiranandani Estate">Hiranandani Estate</option>
+                <option value="DLF Phase 1">DLF Phase 1</option>
+                <option value="Oberoi Splendor">Oberoi Splendor</option>
+                <option value="Lodha Palava">Lodha Palava</option>
+                <option value="other">Other (type below)</option>
+              </select>
+            ) : (
+              <p className="text-sm font-medium text-foreground">
+                {profile.societyName || "Not set"}
+              </p>
+            )}
+            {editing && profile.societyName === "other" && (
+              <input
+                value=""
+                onChange={(e) => handleChange("societyName", e.target.value)}
+                placeholder="Type your society name"
+                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            )}
+          </div>
+
+          {/* Flat, Block/Tower & Floor */}
+          <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl border border-border bg-surface p-4">
               <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
                 <Home size={14} />
@@ -272,7 +359,7 @@ export default function ProfilePage() {
             <div className="rounded-xl border border-border bg-surface p-4">
               <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
                 <Building2 size={14} />
-                Block
+                Block / Tower
               </label>
               {editing ? (
                 <select
@@ -280,38 +367,43 @@ export default function ProfilePage() {
                   onChange={(e) => handleChange("block", e.target.value)}
                   className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
-                  {BLOCKS.map((b) => (
+                  <option value="">Select</option>
+                  {BLOCKS_TOWERS.map((b) => (
                     <option key={b} value={b}>
-                      {b}-Block
+                      {b}
                     </option>
                   ))}
                 </select>
               ) : (
                 <p className="text-sm font-medium text-foreground">
-                  {profile.block}-Block
+                  {profile.block || "Not set"}
                 </p>
               )}
             </div>
-          </div>
-
-          {/* Society Name */}
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
-              <Building2 size={14} />
-              Society Name
-            </label>
-            {editing ? (
-              <input
-                value={profile.societyName}
-                onChange={(e) => handleChange("societyName", e.target.value)}
-                placeholder="e.g., Green Valley Apartments"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            ) : (
-              <p className="text-sm font-medium text-foreground">
-                {profile.societyName || "Not set"}
-              </p>
-            )}
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
+                <Home size={14} />
+                Floor
+              </label>
+              {editing ? (
+                <select
+                  value={profile.floor}
+                  onChange={(e) => handleChange("floor", e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">Select</option>
+                  {FLOORS.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm font-medium text-foreground">
+                  {profile.floor || "Not set"}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Mobile Number */}
