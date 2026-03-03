@@ -183,6 +183,7 @@ export default function FeedPage() {
     type: Post["type"];
     content: string;
     author: string;
+    image?: string;
   }) => {
     const post: Post = {
       id: Date.now().toString(),

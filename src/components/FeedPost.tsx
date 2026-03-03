@@ -62,6 +62,7 @@ export interface Post {
   content: string;
   author: string;
   authorAvatar?: string;
+  image?: string;
   timestamp: string;
   likes: number;
   comments: Comment[];
@@ -185,6 +186,15 @@ export default function FeedPost({
         <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
           {post.content}
         </p>
+        {post.image && (
+          <div className="mt-2">
+            <img
+              src={post.image}
+              alt="Post attachment"
+              className="w-full max-h-96 rounded-lg border border-border object-cover"
+            />
+          </div>
+        )}
       </div>
 
       {/* Stats */}

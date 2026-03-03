@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   MessageCircle,
   HelpCircle,
@@ -9,6 +9,7 @@ import {
   Send,
   X,
   ImagePlus,
+  Image as ImageIcon,
 } from "lucide-react";
 
 const POST_TYPES = [
@@ -50,6 +51,7 @@ interface CreatePostProps {
     type: PostType;
     content: string;
     author: string;
+    image?: string;
   }) => void;
 }
 
@@ -58,17 +60,44 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
   const [type, setType] = useState<PostType>("general");
   const [content, setContent] = useState("");
   const [posting, setPosting] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) return;
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setImagePreview(ev.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleSubmit = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() && !imagePreview) return;
     setPosting(true);
     onPost({
       type,
       content: content.trim(),
       author: userEmail.split("@")[0],
+      image: imagePreview || undefined,
     });
     setContent("");
     setType("general");
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setOpen(false);
     setPosting(false);
   };
@@ -93,7 +122,10 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Create Post</h3>
         <button
-          onClick={() => setOpen(false)}
+          onClick={() => {
+            setOpen(false);
+            removeImage();
+          }}
           className="rounded-lg p-1 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
         >
           <X size={18} />
@@ -136,15 +168,65 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
         autoFocus
       />
 
+      {/* Image Preview */}
+      {imagePreview && (
+        <div className="relative mb-3">
+          <img
+            src={imagePreview}
+            alt="Upload preview"
+            className="w-full max-h-64 rounded-lg border border-border object-cover"
+          />
+          <button
+            onClick={removeImage}
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/80 text-background shadow-md transition-colors hover:bg-foreground"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleImageSelect}
+      />
+
       {/* Actions */}
       <div className="flex items-center justify-between">
-        <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-foreground">
-          <ImagePlus size={16} />
-          Photo
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors ${
+              imagePreview
+                ? "text-primary bg-primary/10"
+                : "text-muted hover:bg-surface-hover hover:text-foreground"
+            }`}
+          >
+            <ImagePlus size={16} />
+            Photo
+          </button>
+          <button
+            onClick={() => {
+              fileInputRef.current?.setAttribute("capture", "user");
+              fileInputRef.current?.click();
+              // Reset capture for next time
+              setTimeout(() => {
+                fileInputRef.current?.setAttribute("capture", "environment");
+              }, 100);
+            }}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+          >
+            <ImageIcon size={16} />
+            Camera
+          </button>
+        </div>
         <button
           onClick={handleSubmit}
-          disabled={!content.trim() || posting}
+          disabled={(!content.trim() && !imagePreview) || posting}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
         >
           <Send size={14} />
