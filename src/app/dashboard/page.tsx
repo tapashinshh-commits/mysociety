@@ -80,7 +80,7 @@ export default function DashboardPage() {
       desc: "Doodhwala, sabziwala status",
       color: "text-secondary",
       bg: "bg-secondary/10",
-      href: "#",
+      href: "/vendors",
     },
     {
       icon: ClipboardList,
@@ -88,7 +88,7 @@ export default function DashboardPage() {
       desc: "Raise & track issues",
       color: "text-accent",
       bg: "bg-accent/10",
-      href: "#",
+      href: "/complaints",
     },
     {
       icon: AlertTriangle,
@@ -96,7 +96,7 @@ export default function DashboardPage() {
       desc: "Alert society instantly",
       color: "text-danger",
       bg: "bg-danger/10",
-      href: "#",
+      href: "/sos",
     },
   ];
 
