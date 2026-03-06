@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
+import { useUser } from "@/hooks/useUser";
+import type { Society } from "@/types/database";
 import {
   ArrowLeft,
   User as UserIcon,
@@ -20,158 +20,162 @@ import {
   Edit3,
 } from "lucide-react";
 
-interface ProfileData {
-  fullName: string;
-  flatNo: string;
-  block: string;
-  floor: string;
-  societyName: string;
-  mobile: string;
-  email: string;
-  aadhaarLast4: string;
-  idCardUrl: string | null;
-  avatarUrl: string | null;
-}
-
 const BLOCKS_TOWERS = [
-  "A-Block",
-  "B-Block",
-  "C-Block",
-  "D-Block",
-  "E-Block",
-  "F-Block",
-  "G-Block",
-  "H-Block",
-  "Tower 1",
-  "Tower 2",
-  "Tower 3",
-  "Tower 4",
-  "Tower 5",
-  "Tower 6",
-  "Tower 7",
-  "Tower 8",
-  "Tower 9",
-  "Tower 10",
+  "A-Block", "B-Block", "C-Block", "D-Block", "E-Block", "F-Block",
+  "G-Block", "H-Block", "Tower 1", "Tower 2", "Tower 3", "Tower 4",
+  "Tower 5", "Tower 6", "Tower 7", "Tower 8", "Tower 9", "Tower 10",
 ];
 
 const FLOORS = [
-  "Ground",
-  "1st",
-  "2nd",
-  "3rd",
-  "4th",
-  "5th",
-  "6th",
-  "7th",
-  "8th",
-  "9th",
-  "10th",
-  "11th",
-  "12th",
-  "13th",
-  "14th",
-  "15th",
-  "16th",
-  "17th",
-  "18th",
-  "19th",
-  "20th",
+  "Ground", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th",
+  "9th", "10th", "11th", "12th", "13th", "14th", "15th", "16th",
+  "17th", "18th", "19th", "20th",
 ];
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, profile, loading, supabase, refreshProfile } = useUser();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [error, setError] = useState("");
   const [idPreview, setIdPreview] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [societies, setSocieties] = useState<Society[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  const [profile, setProfile] = useState<ProfileData>({
-    fullName: "",
-    flatNo: "",
+  // Local form state
+  const [form, setForm] = useState({
+    full_name: "",
+    society_id: "",
+    flat_no: "",
     block: "",
     floor: "",
-    societyName: "",
     mobile: "",
-    email: "",
-    aadhaarLast4: "",
-    idCardUrl: null,
-    avatarUrl: null,
+    aadhaar_last4: "",
   });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [idCardUrl, setIdCardUrl] = useState<string | null>(null);
 
+  // Load societies from DB
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      if (user) {
-        // Load saved profile from localStorage (will move to Supabase later)
-        const savedProfile = localStorage.getItem(`profile_${user.id}`);
-        if (savedProfile) {
-          setProfile(JSON.parse(savedProfile));
-        } else {
-          setProfile((prev) => ({
-            ...prev,
-            email: user.email || "",
-            fullName: user.user_metadata?.full_name || "",
-          }));
+    async function loadSocieties() {
+      try {
+        const { data, error } = await supabase
+          .from("societies")
+          .select("*")
+          .order("name");
+        if (error) {
+          console.error("Error loading societies:", error.message);
         }
+        if (data) setSocieties(data);
+      } catch (err) {
+        console.error("Failed to load societies:", err);
       }
-      setLoading(false);
-    });
-  }, []);
+    }
+    loadSocieties();
+  }, [supabase]);
 
-  const handleChange = (field: keyof ProfileData, value: string) => {
-    setProfile((prev) => ({ ...prev, [field]: value }));
+  // Sync profile into form when loaded
+  useEffect(() => {
+    if (profile) {
+      setForm({
+        full_name: profile.full_name || "",
+        society_id: profile.society_id || "",
+        flat_no: profile.flat_no || "",
+        block: profile.block || "",
+        floor: profile.floor || "",
+        mobile: profile.mobile || "",
+        aadhaar_last4: profile.aadhaar_last4 || "",
+      });
+      setAvatarUrl(profile.avatar_url);
+      setIdCardUrl(profile.id_card_url);
+      // Auto-enter edit mode if profile is incomplete
+      if (!profile.full_name || !profile.society_id) {
+        setEditing(true);
+      }
+    }
+  }, [profile]);
+
+  const handleChange = (field: string, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    // Save to localStorage for now — will move to Supabase profiles table
-    localStorage.setItem(`profile_${user.id}`, JSON.stringify(profile));
+    setError("");
+
+    const { error: saveError } = await supabase
+      .from("profiles")
+      .update({
+        full_name: form.full_name || null,
+        society_id: form.society_id || null,
+        flat_no: form.flat_no || null,
+        block: form.block || null,
+        floor: form.floor || null,
+        mobile: form.mobile || null,
+        aadhaar_last4: form.aadhaar_last4 || null,
+        avatar_url: avatarUrl,
+        id_card_url: idCardUrl,
+      })
+      .eq("id", user.id);
+
     setSaving(false);
-    setSaved(true);
-    setEditing(false);
-    setTimeout(() => setSaved(false), 2000);
+
+    if (saveError) {
+      console.error("Error saving profile:", saveError.message);
+      setError(saveError.message);
+    } else {
+      setSaved(true);
+      setEditing(false);
+      await refreshProfile();
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
-  const handleIdUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleIdUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
 
+    // Show local preview
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setIdPreview(dataUrl);
-      setProfile((prev) => ({ ...prev, idCardUrl: dataUrl }));
-
-      // Simulate ID card data extraction
-      setExtracting(true);
-      setTimeout(() => {
-        setExtracting(false);
-        // In production, this would use OCR (Google Vision / Tesseract)
-        // For now, show a message that extraction is ready
-      }, 1500);
-    };
+    reader.onload = (ev) => setIdPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
+
+    setExtracting(true);
+
+    // Upload to Supabase Storage
+    const filePath = `${user.id}/${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage
+      .from("id-cards")
+      .upload(filePath, file);
+
+    if (!error) {
+      setIdCardUrl(filePath);
+    }
+    setExtracting(false);
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
 
+    // Show local preview immediately
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      setProfile((prev) => ({ ...prev, avatarUrl: dataUrl }));
-    };
+    reader.onload = (ev) => setAvatarUrl(ev.target?.result as string);
     reader.readAsDataURL(file);
+
+    // Upload to Supabase Storage
+    const filePath = `${user.id}/${Date.now()}-avatar.${file.name.split(".").pop()}`;
+    const { error } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file);
+
+    if (!error) {
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      setAvatarUrl(data.publicUrl);
+    }
   };
 
   if (loading) {
@@ -183,9 +187,17 @@ export default function ProfilePage() {
   }
 
   if (!user) {
-    if (typeof window !== "undefined") window.location.href = "/auth";
-    return null;
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth";
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted">Redirecting to sign in...</p>
+      </div>
+    );
   }
+
+  const societyName = societies.find((s) => s.id === form.society_id)?.name || "";
 
   return (
     <div className="min-h-screen bg-background">
@@ -235,20 +247,27 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {/* Error Toast */}
+        {error && (
+          <div className="mb-4 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger">
+            Failed to save profile: {error}
+          </div>
+        )}
+
         {/* Avatar Section */}
         <div className="mb-6 flex flex-col items-center">
           <div className="relative">
             <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-primary/10">
-              {profile.avatarUrl ? (
+              {avatarUrl ? (
                 <img
-                  src={profile.avatarUrl}
+                  src={avatarUrl}
                   alt="Avatar"
                   className="h-full w-full object-cover"
                 />
               ) : (
                 <span className="text-3xl font-bold text-primary">
-                  {profile.fullName
-                    ? profile.fullName.charAt(0).toUpperCase()
+                  {form.full_name
+                    ? form.full_name.charAt(0).toUpperCase()
                     : user.email?.charAt(0).toUpperCase()}
                 </span>
               )}
@@ -282,19 +301,19 @@ export default function ProfilePage() {
             </label>
             {editing ? (
               <input
-                value={profile.fullName}
-                onChange={(e) => handleChange("fullName", e.target.value)}
+                value={form.full_name}
+                onChange={(e) => handleChange("full_name", e.target.value)}
                 placeholder="Enter your full name"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             ) : (
               <p className="text-sm font-medium text-foreground">
-                {profile.fullName || "Not set"}
+                {form.full_name || "Not set"}
               </p>
             )}
           </div>
 
-          {/* Society Name (Dropdown) */}
+          {/* Society Name (Dropdown from DB) */}
           <div className="rounded-xl border border-border bg-surface p-4">
             <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted">
               <Building2 size={14} />
@@ -302,37 +321,21 @@ export default function ProfilePage() {
             </label>
             {editing ? (
               <select
-                value={profile.societyName}
-                onChange={(e) => handleChange("societyName", e.target.value)}
+                value={form.society_id}
+                onChange={(e) => handleChange("society_id", e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="">Select your society</option>
-                <option value="Green Valley Apartments">Green Valley Apartments</option>
-                <option value="Sunshine Residency">Sunshine Residency</option>
-                <option value="Royal Heights">Royal Heights</option>
-                <option value="Palm Grove Society">Palm Grove Society</option>
-                <option value="Lotus Park">Lotus Park</option>
-                <option value="Shanti Nagar CHS">Shanti Nagar CHS</option>
-                <option value="Prestige Towers">Prestige Towers</option>
-                <option value="Godrej Garden City">Godrej Garden City</option>
-                <option value="Hiranandani Estate">Hiranandani Estate</option>
-                <option value="DLF Phase 1">DLF Phase 1</option>
-                <option value="Oberoi Splendor">Oberoi Splendor</option>
-                <option value="Lodha Palava">Lodha Palava</option>
-                <option value="other">Other (type below)</option>
+                {societies.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.city ? `, ${s.city}` : ""}
+                  </option>
+                ))}
               </select>
             ) : (
               <p className="text-sm font-medium text-foreground">
-                {profile.societyName || "Not set"}
+                {societyName || "Not set"}
               </p>
-            )}
-            {editing && profile.societyName === "other" && (
-              <input
-                value=""
-                onChange={(e) => handleChange("societyName", e.target.value)}
-                placeholder="Type your society name"
-                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
             )}
           </div>
 
@@ -345,14 +348,14 @@ export default function ProfilePage() {
               </label>
               {editing ? (
                 <input
-                  value={profile.flatNo}
-                  onChange={(e) => handleChange("flatNo", e.target.value)}
+                  value={form.flat_no}
+                  onChange={(e) => handleChange("flat_no", e.target.value)}
                   placeholder="e.g., 204"
                   className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               ) : (
                 <p className="text-sm font-medium text-foreground">
-                  {profile.flatNo || "Not set"}
+                  {form.flat_no || "Not set"}
                 </p>
               )}
             </div>
@@ -363,20 +366,18 @@ export default function ProfilePage() {
               </label>
               {editing ? (
                 <select
-                  value={profile.block}
+                  value={form.block}
                   onChange={(e) => handleChange("block", e.target.value)}
                   className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="">Select</option>
                   {BLOCKS_TOWERS.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
+                    <option key={b} value={b}>{b}</option>
                   ))}
                 </select>
               ) : (
                 <p className="text-sm font-medium text-foreground">
-                  {profile.block || "Not set"}
+                  {form.block || "Not set"}
                 </p>
               )}
             </div>
@@ -387,20 +388,18 @@ export default function ProfilePage() {
               </label>
               {editing ? (
                 <select
-                  value={profile.floor}
+                  value={form.floor}
                   onChange={(e) => handleChange("floor", e.target.value)}
                   className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="">Select</option>
                   {FLOORS.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
+                    <option key={f} value={f}>{f}</option>
                   ))}
                 </select>
               ) : (
                 <p className="text-sm font-medium text-foreground">
-                  {profile.floor || "Not set"}
+                  {form.floor || "Not set"}
                 </p>
               )}
             </div>
@@ -418,12 +417,9 @@ export default function ProfilePage() {
                   +91
                 </span>
                 <input
-                  value={profile.mobile}
+                  value={form.mobile}
                   onChange={(e) =>
-                    handleChange(
-                      "mobile",
-                      e.target.value.replace(/\D/g, "").slice(0, 10)
-                    )
+                    handleChange("mobile", e.target.value.replace(/\D/g, "").slice(0, 10))
                   }
                   placeholder="98765 43210"
                   type="tel"
@@ -432,7 +428,7 @@ export default function ProfilePage() {
               </div>
             ) : (
               <p className="text-sm font-medium text-foreground">
-                {profile.mobile ? `+91 ${profile.mobile}` : "Not set"}
+                {form.mobile ? `+91 ${form.mobile}` : "Not set"}
               </p>
             )}
           </div>
@@ -444,7 +440,7 @@ export default function ProfilePage() {
               Email Address
             </label>
             <p className="text-sm font-medium text-foreground">
-              {profile.email || user.email}
+              {user.email}
             </p>
             <p className="mt-1 text-[10px] text-muted">
               Email is linked to your login and cannot be changed here.
@@ -458,18 +454,25 @@ export default function ProfilePage() {
               ID Verification
             </label>
 
-            {idPreview || profile.idCardUrl ? (
+            {idPreview || idCardUrl ? (
               <div className="relative">
-                <img
-                  src={idPreview || profile.idCardUrl || ""}
-                  alt="ID Card"
-                  className="w-full rounded-lg border border-border object-contain"
-                />
+                {idPreview ? (
+                  <img
+                    src={idPreview}
+                    alt="ID Card"
+                    className="w-full rounded-lg border border-border object-contain"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
+                    <CheckCircle size={14} />
+                    ID card uploaded and stored securely.
+                  </div>
+                )}
                 {editing && (
                   <button
                     onClick={() => {
                       setIdPreview(null);
-                      setProfile((prev) => ({ ...prev, idCardUrl: null }));
+                      setIdCardUrl(null);
                     }}
                     className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-danger text-white shadow-md"
                   >
@@ -479,13 +482,7 @@ export default function ProfilePage() {
                 {extracting && (
                   <div className="mt-3 flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs text-primary">
                     <Loader2 size={14} className="animate-spin" />
-                    Extracting details from ID card...
-                  </div>
-                )}
-                {!extracting && idPreview && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
-                    <CheckCircle size={14} />
-                    ID card uploaded. Fill in your details above.
+                    Uploading ID card...
                   </div>
                 )}
               </div>
@@ -496,9 +493,7 @@ export default function ProfilePage() {
                   className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border py-8 text-muted transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
                 >
                   <Upload size={24} />
-                  <span className="text-sm font-medium">
-                    Upload ID Card Photo
-                  </span>
+                  <span className="text-sm font-medium">Upload ID Card Photo</span>
                   <span className="text-[10px]">
                     Aadhaar, PAN, Driving License, or Voter ID
                   </span>
@@ -511,7 +506,7 @@ export default function ProfilePage() {
                   className="hidden"
                   onChange={handleIdUpload}
                 />
-                <p className="mt-2 text-[10px] text-muted text-center">
+                <p className="mt-2 text-center text-[10px] text-muted">
                   Your ID is stored securely and only visible to society admins for verification.
                 </p>
               </div>
@@ -537,12 +532,9 @@ export default function ProfilePage() {
                 Aadhaar (Last 4 Digits)
               </label>
               <input
-                value={profile.aadhaarLast4}
+                value={form.aadhaar_last4}
                 onChange={(e) =>
-                  handleChange(
-                    "aadhaarLast4",
-                    e.target.value.replace(/\D/g, "").slice(0, 4)
-                  )
+                  handleChange("aadhaar_last4", e.target.value.replace(/\D/g, "").slice(0, 4))
                 }
                 placeholder="XXXX"
                 maxLength={4}
@@ -559,7 +551,23 @@ export default function ProfilePage() {
         {editing && (
           <div className="mt-6 flex gap-3">
             <button
-              onClick={() => setEditing(false)}
+              onClick={() => {
+                setEditing(false);
+                // Reset form to saved profile values
+                if (profile) {
+                  setForm({
+                    full_name: profile.full_name || "",
+                    society_id: profile.society_id || "",
+                    flat_no: profile.flat_no || "",
+                    block: profile.block || "",
+                    floor: profile.floor || "",
+                    mobile: profile.mobile || "",
+                    aadhaar_last4: profile.aadhaar_last4 || "",
+                  });
+                  setAvatarUrl(profile.avatar_url);
+                  setIdCardUrl(profile.id_card_url);
+                }
+              }}
               className="flex-1 rounded-lg border border-border py-3 text-sm font-medium text-muted transition-colors hover:bg-surface"
             >
               Cancel

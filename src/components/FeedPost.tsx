@@ -15,6 +15,7 @@ import {
   Trash2,
   Mail,
 } from "lucide-react";
+import type { Post as DBPost, Comment as DBComment } from "@/types/database";
 
 const TYPE_CONFIG = {
   general: {
@@ -47,24 +48,11 @@ const TYPE_CONFIG = {
   },
 } as const;
 
-export interface Comment {
-  id: string;
-  author: string;
-  content: string;
-  timestamp: string;
-  likes: number;
+export interface Comment extends DBComment {
   liked: boolean;
 }
 
-export interface Post {
-  id: string;
-  type: "general" | "question" | "alert" | "event";
-  content: string;
-  author: string;
-  authorAvatar?: string;
-  image?: string;
-  timestamp: string;
-  likes: number;
+export interface Post extends DBPost {
   comments: Comment[];
   liked: boolean;
   shared: boolean;
@@ -72,13 +60,15 @@ export interface Post {
 
 interface FeedPostProps {
   post: Post;
-  currentUser: string;
+  userId: string;
+  userFullName: string;
+  userAvatarUrl: string | null;
   onLike: (id: string) => void;
   onComment: (postId: string, content: string) => void;
   onCommentLike: (postId: string, commentId: string) => void;
   onDeleteComment: (postId: string, commentId: string) => void;
   onShare: (id: string) => void;
-  onDM: (author: string) => void;
+  onDM: (authorId: string) => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -96,9 +86,41 @@ function timeAgo(dateStr: string): string {
   });
 }
 
+function AuthorAvatar({
+  author,
+  size = "md",
+}: {
+  author?: { full_name: string | null; avatar_url: string | null };
+  size?: "sm" | "md";
+}) {
+  const dim = size === "sm" ? "h-7 w-7" : "h-10 w-10";
+  const text = size === "sm" ? "text-[10px]" : "text-sm";
+  const initial = (author?.full_name || "?").charAt(0).toUpperCase();
+
+  if (author?.avatar_url) {
+    return (
+      <img
+        src={author.avatar_url}
+        alt={author.full_name || "User"}
+        className={`${dim} rounded-full object-cover`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`flex ${dim} items-center justify-center rounded-full bg-primary/10 ${text} font-bold text-primary`}
+    >
+      {initial}
+    </div>
+  );
+}
+
 export default function FeedPost({
   post,
-  currentUser,
+  userId,
+  userFullName,
+  userAvatarUrl,
   onLike,
   onComment,
   onCommentLike,
@@ -111,6 +133,8 @@ export default function FeedPost({
   const [showMenu, setShowMenu] = useState(false);
   const config = TYPE_CONFIG[post.type];
 
+  const authorName = post.author?.full_name || "Unknown";
+
   const handleSubmitComment = () => {
     if (!commentText.trim()) return;
     onComment(post.id, commentText.trim());
@@ -122,13 +146,11 @@ export default function FeedPost({
       {/* Post Header */}
       <div className="flex items-start justify-between p-4 pb-0">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-            {post.author.charAt(0).toUpperCase()}
-          </div>
+          <AuthorAvatar author={post.author} size="md" />
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">
-                {post.author}
+                {authorName}
               </span>
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${config.badge}`}
@@ -137,7 +159,7 @@ export default function FeedPost({
               </span>
             </div>
             <span className="text-xs text-muted">
-              {timeAgo(post.timestamp)}
+              {timeAgo(post.created_at)}
             </span>
           </div>
         </div>
@@ -152,13 +174,13 @@ export default function FeedPost({
             <div className="absolute right-0 top-8 z-10 w-40 rounded-lg border border-border bg-surface py-1 shadow-lg">
               <button
                 onClick={() => {
-                  onDM(post.author);
+                  onDM(post.author_id);
                   setShowMenu(false);
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-surface-hover"
               >
                 <Mail size={14} />
-                Message {post.author}
+                Message {authorName}
               </button>
               <button
                 onClick={() => {
@@ -186,10 +208,10 @@ export default function FeedPost({
         <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
           {post.content}
         </p>
-        {post.image && (
+        {post.image_url && (
           <div className="mt-2">
             <img
-              src={post.image}
+              src={post.image_url}
               alt="Post attachment"
               className="w-full max-h-96 rounded-lg border border-border object-cover"
             />
@@ -198,12 +220,12 @@ export default function FeedPost({
       </div>
 
       {/* Stats */}
-      {(post.likes > 0 || post.comments.length > 0) && (
+      {(post.likes_count > 0 || post.comments.length > 0) && (
         <div className="flex items-center gap-4 px-4 pb-2 text-xs text-muted">
-          {post.likes > 0 && (
+          {post.likes_count > 0 && (
             <span className="flex items-center gap-1">
               <Heart size={12} className="fill-primary text-primary" />
-              {post.likes}
+              {post.likes_count}
             </span>
           )}
           {post.comments.length > 0 && (
@@ -267,64 +289,67 @@ export default function FeedPost({
           {/* Existing Comments */}
           {post.comments.length > 0 && (
             <div className="max-h-64 space-y-0 overflow-y-auto">
-              {post.comments.map((comment) => (
-                <div
-                  key={comment.id}
-                  className="flex gap-2.5 border-b border-border/50 px-4 py-3 last:border-b-0"
-                >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                    {comment.author.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="rounded-lg bg-surface-hover px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-foreground">
-                          {comment.author}
-                        </span>
-                        <span className="text-[10px] text-muted">
-                          {timeAgo(comment.timestamp)}
-                        </span>
+              {post.comments.map((comment) => {
+                const commentAuthorName =
+                  comment.author?.full_name || "Unknown";
+                return (
+                  <div
+                    key={comment.id}
+                    className="flex gap-2.5 border-b border-border/50 px-4 py-3 last:border-b-0"
+                  >
+                    <AuthorAvatar author={comment.author} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="rounded-lg bg-surface-hover px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">
+                            {commentAuthorName}
+                          </span>
+                          <span className="text-[10px] text-muted">
+                            {timeAgo(comment.created_at)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs leading-relaxed text-foreground">
+                          {comment.content}
+                        </p>
                       </div>
-                      <p className="mt-0.5 text-xs leading-relaxed text-foreground">
-                        {comment.content}
-                      </p>
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 pl-1">
-                      <button
-                        onClick={() => onCommentLike(post.id, comment.id)}
-                        className={`flex items-center gap-1 text-[10px] font-medium ${
-                          comment.liked
-                            ? "text-primary"
-                            : "text-muted hover:text-foreground"
-                        }`}
-                      >
-                        <ThumbsUp size={10} />
-                        {comment.likes > 0 && comment.likes}
-                        {comment.liked ? " Liked" : " Like"}
-                      </button>
-                      {comment.author === currentUser && (
+                      <div className="mt-1 flex items-center gap-3 pl-1">
                         <button
-                          onClick={() =>
-                            onDeleteComment(post.id, comment.id)
-                          }
-                          className="flex items-center gap-1 text-[10px] text-muted hover:text-danger"
+                          onClick={() => onCommentLike(post.id, comment.id)}
+                          className={`flex items-center gap-1 text-[10px] font-medium ${
+                            comment.liked
+                              ? "text-primary"
+                              : "text-muted hover:text-foreground"
+                          }`}
                         >
-                          <Trash2 size={10} />
-                          Delete
+                          <ThumbsUp size={10} />
+                          {comment.likes_count > 0 && comment.likes_count}
+                          {comment.liked ? " Liked" : " Like"}
                         </button>
-                      )}
+                        {comment.author_id === userId && (
+                          <button
+                            onClick={() =>
+                              onDeleteComment(post.id, comment.id)
+                            }
+                            className="flex items-center gap-1 text-[10px] text-muted hover:text-danger"
+                          >
+                            <Trash2 size={10} />
+                            Delete
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {/* Comment Input */}
           <div className="flex items-center gap-2 p-3">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-              {currentUser.charAt(0).toUpperCase()}
-            </div>
+            <AuthorAvatar
+              author={{ full_name: userFullName, avatar_url: userAvatarUrl }}
+              size="sm"
+            />
             <input
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}

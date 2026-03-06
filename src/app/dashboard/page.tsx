@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
+import { useUser } from "@/hooks/useUser";
 import {
   LogOut,
   MessageCircle,
@@ -14,22 +13,51 @@ import {
   Bell,
   UserCircle,
   Mail,
+  ArrowRight,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, profile, loading, supabase } = useUser();
+
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [openTickets, setOpenTickets] = useState<number | null>(null);
+  const [recentEvents, setRecentEvents] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
+    if (!profile?.society_id || !supabase) return;
+
+    const societyId = profile.society_id;
+
+    async function fetchStats() {
+      const sevenDaysAgo = new Date(
+        Date.now() - 7 * 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      const [membersRes, ticketsRes, eventsRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("*", { count: "exact", head: true })
+          .eq("society_id", societyId),
+        supabase
+          .from("tickets")
+          .select("*", { count: "exact", head: true })
+          .eq("society_id", societyId)
+          .in("status", ["open", "in_progress", "escalated"]),
+        supabase
+          .from("posts")
+          .select("*", { count: "exact", head: true })
+          .eq("society_id", societyId)
+          .eq("type", "event")
+          .gte("created_at", sevenDaysAgo),
+      ]);
+
+      setMemberCount(membersRes.count ?? 0);
+      setOpenTickets(ticketsRes.count ?? 0);
+      setRecentEvents(eventsRes.count ?? 0);
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoading(false);
-    });
-  }, []);
+
+    fetchStats();
+  }, [profile?.society_id, supabase]);
 
   const handleLogout = async () => {
     if (supabase) await supabase.auth.signOut();
@@ -50,6 +78,8 @@ export default function DashboardPage() {
     }
     return null;
   }
+
+  const displayName = profile?.full_name || user.email?.split("@")[0] || "there";
 
   const modules = [
     {
@@ -82,7 +112,7 @@ export default function DashboardPage() {
       desc: "Society member directory",
       color: "text-primary",
       bg: "bg-primary/10",
-      href: "#",
+      href: "/neighbors",
     },
     {
       icon: Truck,
@@ -150,28 +180,56 @@ export default function DashboardPage() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-foreground">
             Welcome back{" "}
-            <span className="text-primary">
-              {user.email?.split("@")[0]}
-            </span>
+            <span className="text-primary">{displayName}</span>
           </h1>
           <p className="mt-1 text-sm text-muted">
             Here&apos;s what&apos;s happening in your society today.
           </p>
         </div>
 
+        {/* No Society Setup Card */}
+        {!profile?.society_id && (
+          <div className="mb-8 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 p-6">
+            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Set up your profile
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Join or create a society to unlock all features like community
+                  feed, complaints, vendors, and more.
+                </p>
+              </div>
+              <a
+                href="/profile"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+              >
+                Complete Profile
+                <ArrowRight size={16} />
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Quick Stats */}
         <div className="mb-8 grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-sm text-muted">Society Members</p>
-            <p className="mt-1 text-2xl font-bold text-foreground">--</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">
+              {memberCount !== null ? memberCount : "--"}
+            </p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-sm text-muted">Open Complaints</p>
-            <p className="mt-1 text-2xl font-bold text-foreground">--</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">
+              {openTickets !== null ? openTickets : "--"}
+            </p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-5">
             <p className="text-sm text-muted">Upcoming Events</p>
-            <p className="mt-1 text-2xl font-bold text-foreground">--</p>
+            <p className="mt-1 text-2xl font-bold text-foreground">
+              {recentEvents !== null ? recentEvents : "--"}
+            </p>
           </div>
         </div>
 

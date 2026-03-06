@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
+import { useEffect, useState, useCallback } from "react";
+import { useUser } from "@/hooks/useUser";
 import {
   ArrowLeft,
   MessageCircle,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import CreatePost from "@/components/CreatePost";
 import FeedPost, { type Post, type Comment } from "@/components/FeedPost";
+import type { Post as DBPost, Comment as DBComment } from "@/types/database";
 
 const FILTERS = [
   { value: "all", label: "All", icon: null },
@@ -22,257 +22,483 @@ const FILTERS = [
   { value: "event", label: "Events", icon: Calendar },
 ] as const;
 
-// Demo comments
-const demoComments = (names: string[], texts: string[], baseTime: number): Comment[] =>
-  names.map((name, i) => ({
-    id: `c${baseTime}-${i}`,
-    author: name,
-    content: texts[i],
-    timestamp: new Date(Date.now() - baseTime + i * 60000).toISOString(),
-    likes: Math.floor(Math.random() * 5),
-    liked: false,
-  }));
-
-const DEMO_POSTS: Post[] = [
-  {
-    id: "1",
-    type: "alert",
-    content:
-      "Water supply will be shut off tomorrow (March 4) from 10 AM to 2 PM for tank cleaning. Please store water accordingly.",
-    author: "secretary",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    likes: 12,
-    comments: demoComments(
-      ["amit_501", "priya_204", "rahul_105"],
-      [
-        "Thanks for the heads up! Will store extra water tonight.",
-        "Again? This is the 3rd time this month 😤",
-        "Can we get at least 24 hours advance notice next time?",
-      ],
-      1000 * 60 * 20
-    ),
-    liked: false,
-    shared: false,
-  },
-  {
-    id: "2",
-    type: "general",
-    content:
-      "Has anyone seen a grey Persian cat near B-block? She's been missing since yesterday evening. Name is Mitthu. Please contact flat B-204 if found. 🐱",
-    author: "priya_204",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    likes: 8,
-    comments: demoComments(
-      ["neha_c302", "sunita_a302", "guard_1", "rahul_105", "priya_204"],
-      [
-        "I think I saw a grey cat near the garden area around 6pm!",
-        "Oh no! I'll keep an eye out. Hope Mitthu comes back soon 🙏",
-        "Madam, I'll check CCTV footage from yesterday evening.",
-        "Try putting her food bowl outside your flat door. Cats usually come back for food.",
-        "Thank you everyone! Guard bhaiya, please do check the CCTV. 🙏",
-      ],
-      1000 * 60 * 60
-    ),
-    liked: false,
-    shared: false,
-  },
-  {
-    id: "3",
-    type: "question",
-    content:
-      "Can anyone recommend a reliable electrician? Need to fix some wiring issues in my flat. Budget-friendly please!",
-    author: "rahul_105",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-    likes: 3,
-    comments: demoComments(
-      ["amit_501", "treasurer", "vikram_a105", "sunita_a302"],
-      [
-        "Try Sharma Electric — 98765 11111. He did my whole flat rewiring last month. Very reasonable.",
-        "Society has an empanelled electrician. Contact office for his number.",
-        "Avoid the guy from the market. He charged me ₹2000 for changing a switch 😅",
-        "+1 for Sharma Electric. He's been working in this society for years.",
-      ],
-      1000 * 60 * 60 * 3
-    ),
-    liked: false,
-    shared: false,
-  },
-  {
-    id: "4",
-    type: "event",
-    content:
-      "Holi celebration in the society garden this Sunday at 11 AM! Colors, water balloons, and DJ music. Kids activities from 10 AM. Everyone is welcome! 🎨",
-    author: "cultural_committee",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-    likes: 24,
-    comments: demoComments(
-      ["priya_204", "neha_c302", "amit_501"],
-      [
-        "Yay! Can't wait! Will there be organic colors this year?",
-        "Kids are so excited! What about the thandai stall? 🥛",
-        "Please make sure we have enough dustbins this time. Last year was messy.",
-      ],
-      1000 * 60 * 60 * 6
-    ),
-    liked: false,
-    shared: false,
-  },
-  {
-    id: "5",
-    type: "alert",
-    content:
-      "Lift in A-block is under maintenance today. Please use the stairs or B-block lift. Sorry for the inconvenience.",
-    author: "maintenance",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-    likes: 5,
-    comments: demoComments(
-      ["vikram_a105", "sunita_a302"],
-      [
-        "How long will this take? Elderly residents need the lift urgently.",
-        "Can B-block lift timings be extended till A-block is fixed?",
-      ],
-      1000 * 60 * 60 * 10
-    ),
-    liked: false,
-    shared: false,
-  },
-  {
-    id: "6",
-    type: "general",
-    content:
-      "Monthly maintenance bill for February is due. Please pay by March 10 to avoid late charges. UPI: society@upi",
-    author: "treasurer",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    likes: 6,
-    comments: demoComments(
-      ["rahul_105", "amit_501", "treasurer"],
-      [
-        "Can we get a proper breakdown of expenses this month?",
-        "Paid! Transaction ID: UPI123456. Please confirm receipt.",
-        "@amit_501 Received, thank you! @rahul_105 Expense sheet will be shared on WhatsApp group.",
-      ],
-      1000 * 60 * 60 * 20
-    ),
-    liked: false,
-    shared: false,
-  },
-];
-
 type FilterType = (typeof FILTERS)[number]["value"];
 
 export default function FeedPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [posts, setPosts] = useState<Post[]>(DEMO_POSTS);
+  const { user, profile, loading, supabase } = useUser();
+  const [posts, setPosts] = useState<Post[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
+  const [fetching, setFetching] = useState(true);
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
+  // Fetch all posts for the society along with like status and comments
+  const fetchPosts = useCallback(async () => {
+    if (!profile?.society_id || !user) return;
+
+    setFetching(true);
+
+    // Fetch posts with author info
+    const { data: rawPosts, error: postsError } = await supabase
+      .from("posts")
+      .select("*, author:profiles(full_name, avatar_url)")
+      .eq("society_id", profile.society_id)
+      .order("created_at", { ascending: false });
+
+    if (postsError) {
+      console.error("Error fetching posts:", postsError);
+      setFetching(false);
       return;
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoading(false);
-    });
-  }, []);
 
-  const currentUser = user?.email?.split("@")[0] || "user";
-
-  const handleNewPost = (newPost: {
-    type: Post["type"];
-    content: string;
-    author: string;
-    image?: string;
-  }) => {
-    const post: Post = {
-      id: Date.now().toString(),
-      ...newPost,
-      timestamp: new Date().toISOString(),
-      likes: 0,
-      comments: [],
-      liked: false,
-      shared: false,
-    };
-    setPosts((prev) => [post, ...prev]);
-  };
-
-  const handleLike = (id: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 }
-          : p
-      )
-    );
-  };
-
-  const handleComment = (postId: string, content: string) => {
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      author: currentUser,
-      content,
-      timestamp: new Date().toISOString(),
-      likes: 0,
-      liked: false,
-    };
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId ? { ...p, comments: [...p.comments, newComment] } : p
-      )
-    );
-  };
-
-  const handleCommentLike = (postId: string, commentId: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              comments: p.comments.map((c) =>
-                c.id === commentId
-                  ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 }
-                  : c
-              ),
-            }
-          : p
-      )
-    );
-  };
-
-  const handleDeleteComment = (postId: string, commentId: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, comments: p.comments.filter((c) => c.id !== commentId) }
-          : p
-      )
-    );
-  };
-
-  const handleShare = (id: string) => {
-    setPosts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, shared: true } : p))
-    );
-    // Copy link or native share
-    if (navigator.share) {
-      const post = posts.find((p) => p.id === id);
-      navigator.share({
-        title: "MySociety Post",
-        text: post?.content.slice(0, 100),
-        url: window.location.href,
-      });
+    if (!rawPosts || rawPosts.length === 0) {
+      setPosts([]);
+      setFetching(false);
+      return;
     }
-  };
 
-  const handleDM = (author: string) => {
-    window.location.href = `/messages?to=${author}`;
-  };
+    // Fetch which posts the current user has liked
+    const postIds = rawPosts.map((p: DBPost) => p.id);
+    const { data: likedPosts } = await supabase
+      .from("post_likes")
+      .select("post_id")
+      .eq("user_id", user.id)
+      .in("post_id", postIds);
+
+    const likedPostIds = new Set(
+      (likedPosts || []).map((l: { post_id: string }) => l.post_id)
+    );
+
+    // Fetch comments for all posts with author info
+    const { data: rawComments } = await supabase
+      .from("comments")
+      .select("*, author:profiles(full_name, avatar_url)")
+      .in("post_id", postIds)
+      .order("created_at", { ascending: true });
+
+    // Fetch which comments the current user has liked
+    const commentIds = (rawComments || []).map((c: DBComment) => c.id);
+    let likedCommentIds = new Set<string>();
+    if (commentIds.length > 0) {
+      const { data: likedComments } = await supabase
+        .from("comment_likes")
+        .select("comment_id")
+        .eq("user_id", user.id)
+        .in("comment_id", commentIds);
+
+      likedCommentIds = new Set(
+        (likedComments || []).map(
+          (l: { comment_id: string }) => l.comment_id
+        )
+      );
+    }
+
+    // Group comments by post_id
+    const commentsByPost = new Map<string, Comment[]>();
+    for (const c of rawComments || []) {
+      const comment: Comment = {
+        ...c,
+        liked: likedCommentIds.has(c.id),
+      };
+      const existing = commentsByPost.get(c.post_id) || [];
+      existing.push(comment);
+      commentsByPost.set(c.post_id, existing);
+    }
+
+    // Assemble final posts
+    const assembled: Post[] = rawPosts.map((p: DBPost) => ({
+      ...p,
+      comments: commentsByPost.get(p.id) || [],
+      liked: likedPostIds.has(p.id),
+      shared: false,
+    }));
+
+    setPosts(assembled);
+    setFetching(false);
+  }, [profile?.society_id, user, supabase]);
+
+  // Initial fetch
+  useEffect(() => {
+    if (!loading && profile?.society_id && user) {
+      fetchPosts();
+    } else if (!loading) {
+      setFetching(false);
+    }
+  }, [loading, profile?.society_id, user, fetchPosts]);
+
+  // Real-time subscription for new posts
+  useEffect(() => {
+    if (!profile?.society_id || !user) return;
+
+    const channel = supabase
+      .channel("feed-posts")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "posts",
+          filter: `society_id=eq.${profile.society_id}`,
+        },
+        async (payload) => {
+          const newPostRaw = payload.new as DBPost;
+
+          // Don't add duplicates
+          setPosts((prev) => {
+            if (prev.some((p) => p.id === newPostRaw.id)) return prev;
+            return prev; // will be replaced below
+          });
+
+          // Fetch the full post with author info
+          const { data: fullPost } = await supabase
+            .from("posts")
+            .select("*, author:profiles(full_name, avatar_url)")
+            .eq("id", newPostRaw.id)
+            .single();
+
+          if (fullPost) {
+            const newPost: Post = {
+              ...fullPost,
+              comments: [],
+              liked: false,
+              shared: false,
+            };
+            setPosts((prev) => {
+              if (prev.some((p) => p.id === newPost.id)) return prev;
+              return [newPost, ...prev];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.society_id, user, supabase]);
+
+  // Handler: post created callback (refetch is optional since realtime will pick it up,
+  // but we refetch for immediate feedback in case realtime is delayed)
+  const handlePostCreated = useCallback(() => {
+    fetchPosts();
+  }, [fetchPosts]);
+
+  // Handler: toggle like on a post
+  const handleLike = useCallback(
+    async (postId: string) => {
+      if (!user) return;
+
+      // Optimistic update
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                liked: !p.liked,
+                likes_count: p.liked
+                  ? p.likes_count - 1
+                  : p.likes_count + 1,
+              }
+            : p
+        )
+      );
+
+      const post = posts.find((p) => p.id === postId);
+      if (!post) return;
+
+      if (post.liked) {
+        // Unlike: delete the row
+        const { error } = await supabase
+          .from("post_likes")
+          .delete()
+          .eq("post_id", postId)
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.error("Error unliking post:", error);
+          // Revert on error
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? { ...p, liked: true, likes_count: p.likes_count + 1 }
+                : p
+            )
+          );
+        }
+      } else {
+        // Like: insert the row
+        const { error } = await supabase
+          .from("post_likes")
+          .insert({ post_id: postId, user_id: user.id });
+
+        if (error) {
+          console.error("Error liking post:", error);
+          // Revert on error
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? { ...p, liked: false, likes_count: p.likes_count - 1 }
+                : p
+            )
+          );
+        }
+      }
+    },
+    [user, posts, supabase]
+  );
+
+  // Handler: add a comment to a post
+  const handleComment = useCallback(
+    async (postId: string, content: string) => {
+      if (!user || !profile) return;
+
+      // Optimistic update
+      const optimisticComment: Comment = {
+        id: `temp-${Date.now()}`,
+        post_id: postId,
+        author_id: user.id,
+        content,
+        likes_count: 0,
+        created_at: new Date().toISOString(),
+        author: {
+          full_name: profile.full_name,
+          avatar_url: profile.avatar_url,
+        },
+        liked: false,
+      };
+
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                comments: [...p.comments, optimisticComment],
+                comments_count: p.comments_count + 1,
+              }
+            : p
+        )
+      );
+
+      const { data: inserted, error } = await supabase
+        .from("comments")
+        .insert({
+          post_id: postId,
+          author_id: user.id,
+          content,
+        })
+        .select("*, author:profiles(full_name, avatar_url)")
+        .single();
+
+      if (error) {
+        console.error("Error adding comment:", error);
+        // Revert optimistic update
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? {
+                  ...p,
+                  comments: p.comments.filter(
+                    (c) => c.id !== optimisticComment.id
+                  ),
+                  comments_count: p.comments_count - 1,
+                }
+              : p
+          )
+        );
+        return;
+      }
+
+      // Replace optimistic comment with real one
+      if (inserted) {
+        const realComment: Comment = {
+          ...inserted,
+          liked: false,
+        };
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? {
+                  ...p,
+                  comments: p.comments.map((c) =>
+                    c.id === optimisticComment.id ? realComment : c
+                  ),
+                }
+              : p
+          )
+        );
+      }
+    },
+    [user, profile, supabase]
+  );
+
+  // Handler: toggle like on a comment
+  const handleCommentLike = useCallback(
+    async (postId: string, commentId: string) => {
+      if (!user) return;
+
+      // Find current state
+      const post = posts.find((p) => p.id === postId);
+      const comment = post?.comments.find((c) => c.id === commentId);
+      if (!comment) return;
+
+      // Optimistic update
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                comments: p.comments.map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        liked: !c.liked,
+                        likes_count: c.liked
+                          ? c.likes_count - 1
+                          : c.likes_count + 1,
+                      }
+                    : c
+                ),
+              }
+            : p
+        )
+      );
+
+      if (comment.liked) {
+        const { error } = await supabase
+          .from("comment_likes")
+          .delete()
+          .eq("comment_id", commentId)
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.error("Error unliking comment:", error);
+          // Revert
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    comments: p.comments.map((c) =>
+                      c.id === commentId
+                        ? {
+                            ...c,
+                            liked: true,
+                            likes_count: c.likes_count + 1,
+                          }
+                        : c
+                    ),
+                  }
+                : p
+            )
+          );
+        }
+      } else {
+        const { error } = await supabase
+          .from("comment_likes")
+          .insert({ comment_id: commentId, user_id: user.id });
+
+        if (error) {
+          console.error("Error liking comment:", error);
+          // Revert
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    comments: p.comments.map((c) =>
+                      c.id === commentId
+                        ? {
+                            ...c,
+                            liked: false,
+                            likes_count: c.likes_count - 1,
+                          }
+                        : c
+                    ),
+                  }
+                : p
+            )
+          );
+        }
+      }
+    },
+    [user, posts, supabase]
+  );
+
+  // Handler: delete a comment
+  const handleDeleteComment = useCallback(
+    async (postId: string, commentId: string) => {
+      if (!user) return;
+
+      // Store for potential revert
+      const post = posts.find((p) => p.id === postId);
+      const deletedComment = post?.comments.find((c) => c.id === commentId);
+
+      // Optimistic update
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                comments: p.comments.filter((c) => c.id !== commentId),
+                comments_count: Math.max(0, p.comments_count - 1),
+              }
+            : p
+        )
+      );
+
+      const { error } = await supabase
+        .from("comments")
+        .delete()
+        .eq("id", commentId)
+        .eq("author_id", user.id);
+
+      if (error) {
+        console.error("Error deleting comment:", error);
+        // Revert
+        if (deletedComment) {
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === postId
+                ? {
+                    ...p,
+                    comments: [...p.comments, deletedComment],
+                    comments_count: p.comments_count + 1,
+                  }
+                : p
+            )
+          );
+        }
+      }
+    },
+    [user, posts, supabase]
+  );
+
+  // Handler: share a post
+  const handleShare = useCallback(
+    (id: string) => {
+      setPosts((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, shared: true } : p))
+      );
+      if (navigator.share) {
+        const post = posts.find((p) => p.id === id);
+        navigator.share({
+          title: "MySociety Post",
+          text: post?.content.slice(0, 100),
+          url: window.location.href,
+        });
+      }
+    },
+    [posts]
+  );
+
+  // Handler: DM an author
+  const handleDM = useCallback((authorId: string) => {
+    window.location.href = `/messages?to=${authorId}`;
+  }, []);
 
   const filtered =
     filter === "all" ? posts : posts.filter((p) => p.type === filter);
 
-  if (loading) {
+  // Loading state
+  if (loading || fetching) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -280,9 +506,34 @@ export default function FeedPage() {
     );
   }
 
+  // Not authenticated
   if (!user) {
     if (typeof window !== "undefined") window.location.href = "/auth";
     return null;
+  }
+
+  // No society set up yet
+  if (!profile?.society_id) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="rounded-xl border border-border bg-surface p-8 text-center max-w-sm">
+          <MessageCircle size={32} className="mx-auto mb-3 text-muted" />
+          <h2 className="text-lg font-bold text-foreground mb-2">
+            Set Up Your Profile
+          </h2>
+          <p className="text-sm text-muted mb-4">
+            You need to join a society before you can access the community feed.
+            Please set up your profile first.
+          </p>
+          <a
+            href="/profile"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            Go to Profile
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -315,8 +566,10 @@ export default function FeedPage() {
         {/* Create Post */}
         <div className="mb-4">
           <CreatePost
-            userEmail={user.email || "user"}
-            onPost={handleNewPost}
+            userId={user.id}
+            societyId={profile.society_id}
+            supabase={supabase}
+            onPostCreated={handlePostCreated}
           />
         </div>
 
@@ -352,7 +605,9 @@ export default function FeedPage() {
               <FeedPost
                 key={post.id}
                 post={post}
-                currentUser={currentUser}
+                userId={user.id}
+                userFullName={profile.full_name || "You"}
+                userAvatarUrl={profile.avatar_url}
                 onLike={handleLike}
                 onComment={handleComment}
                 onCommentLike={handleCommentLike}

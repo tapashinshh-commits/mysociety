@@ -1,18 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { createSupabaseBrowser } from "@/lib/supabase/client";
+
+const supabase = createSupabaseBrowser();
 
 export default function AuthCallbackPage() {
   useEffect(() => {
-    if (!supabase) {
-      window.location.href = "/auth";
-      return;
-    }
-
-    // Supabase JS client automatically detects the hash fragment
-    // (#access_token=...) and sets the session
-    supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") {
         window.location.href = "/dashboard";
       }
@@ -29,6 +24,8 @@ export default function AuthCallbackPage() {
         }, 3000);
       }
     });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   return (

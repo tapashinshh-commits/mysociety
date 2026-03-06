@@ -11,6 +11,7 @@ import {
   ImagePlus,
   Image as ImageIcon,
 } from "lucide-react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const POST_TYPES = [
   {
@@ -46,21 +47,24 @@ const POST_TYPES = [
 type PostType = (typeof POST_TYPES)[number]["value"];
 
 interface CreatePostProps {
-  userEmail: string;
-  onPost: (post: {
-    type: PostType;
-    content: string;
-    author: string;
-    image?: string;
-  }) => void;
+  userId: string;
+  societyId: string;
+  supabase: SupabaseClient;
+  onPostCreated: () => void;
 }
 
-export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
+export default function CreatePost({
+  userId,
+  societyId,
+  supabase,
+  onPostCreated,
+}: CreatePostProps) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<PostType>("general");
   const [content, setContent] = useState("");
   const [posting, setPosting] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +77,8 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) return;
 
+    setImageFile(file);
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       setImagePreview(ev.target?.result as string);
@@ -82,24 +88,67 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
 
   const removeImage = () => {
     setImagePreview(null);
+    setImageFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSubmit = async () => {
-    if (!content.trim() && !imagePreview) return;
+    if (!content.trim() && !imageFile) return;
     setPosting(true);
-    onPost({
-      type,
-      content: content.trim(),
-      author: userEmail.split("@")[0],
-      image: imagePreview || undefined,
-    });
-    setContent("");
-    setType("general");
-    setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setOpen(false);
-    setPosting(false);
+
+    try {
+      let imageUrl: string | null = null;
+
+      // Upload image if present
+      if (imageFile) {
+        const fileExt = imageFile.name.split(".").pop();
+        const filePath = `${userId}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("post-images")
+          .upload(filePath, imageFile);
+
+        if (uploadError) {
+          console.error("Image upload failed:", uploadError);
+          setPosting(false);
+          return;
+        }
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("post-images").getPublicUrl(filePath);
+
+        imageUrl = publicUrl;
+      }
+
+      // Insert the post
+      const { error: insertError } = await supabase.from("posts").insert({
+        society_id: societyId,
+        author_id: userId,
+        type,
+        content: content.trim(),
+        image_url: imageUrl,
+      });
+
+      if (insertError) {
+        console.error("Post creation failed:", insertError);
+        setPosting(false);
+        return;
+      }
+
+      // Reset form
+      setContent("");
+      setType("general");
+      setImagePreview(null);
+      setImageFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setOpen(false);
+      onPostCreated();
+    } catch (err) {
+      console.error("Unexpected error creating post:", err);
+    } finally {
+      setPosting(false);
+    }
   };
 
   if (!open) {
@@ -226,11 +275,11 @@ export default function CreatePost({ userEmail, onPost }: CreatePostProps) {
         </div>
         <button
           onClick={handleSubmit}
-          disabled={(!content.trim() && !imagePreview) || posting}
+          disabled={(!content.trim() && !imageFile) || posting}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
         >
           <Send size={14} />
-          Post
+          {posting ? "Posting..." : "Post"}
         </button>
       </div>
     </div>

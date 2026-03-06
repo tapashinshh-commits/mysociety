@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
+import { useEffect, useState, useCallback } from "react";
+import { useUser } from "@/hooks/useUser";
+import type { SOSAlert, EmergencyContact } from "@/types/database";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -15,7 +15,7 @@ import {
   Clock,
 } from "lucide-react";
 
-interface EmergencyContact {
+interface NationalContact {
   id: string;
   name: string;
   nameHi: string;
@@ -25,18 +25,9 @@ interface EmergencyContact {
   bg: string;
 }
 
-interface SOSAlert {
-  id: string;
-  type: string;
-  message: string;
-  author: string;
-  timestamp: string;
-  location: string;
-}
-
-const EMERGENCY_CONTACTS: EmergencyContact[] = [
+const NATIONAL_EMERGENCY_CONTACTS: NationalContact[] = [
   {
-    id: "1",
+    id: "nat-1",
     name: "Police",
     nameHi: "पुलिस",
     number: "100",
@@ -45,7 +36,7 @@ const EMERGENCY_CONTACTS: EmergencyContact[] = [
     bg: "bg-primary/10",
   },
   {
-    id: "2",
+    id: "nat-2",
     name: "Fire Brigade",
     nameHi: "दमकल",
     number: "101",
@@ -54,7 +45,7 @@ const EMERGENCY_CONTACTS: EmergencyContact[] = [
     bg: "bg-danger/10",
   },
   {
-    id: "3",
+    id: "nat-3",
     name: "Ambulance",
     nameHi: "एम्बुलेंस",
     number: "102",
@@ -63,20 +54,20 @@ const EMERGENCY_CONTACTS: EmergencyContact[] = [
     bg: "bg-success/10",
   },
   {
-    id: "4",
-    name: "Emergency",
-    nameHi: "आपातकालीन",
-    number: "112",
-    icon: Siren,
+    id: "nat-4",
+    name: "Women Helpline",
+    nameHi: "महिला हेल्पलाइन",
+    number: "1091",
+    icon: Phone,
     color: "text-warning",
     bg: "bg-warning/10",
   },
   {
-    id: "5",
-    name: "Society Security",
-    nameHi: "सोसाइटी सिक्योरिटी",
-    number: "+91 98765 00000",
-    icon: Shield,
+    id: "nat-5",
+    name: "Disaster",
+    nameHi: "आपदा प्रबंधन",
+    number: "108",
+    icon: Siren,
     color: "text-accent",
     bg: "bg-accent/10",
   },
@@ -93,57 +84,168 @@ const SOS_TYPES = [
   "Other",
 ];
 
-const DEMO_ALERTS: SOSAlert[] = [
-  {
-    id: "1",
-    type: "Medical Emergency",
-    message: "Elderly person fell down in C-block staircase. Need help immediately!",
-    author: "neha_c302",
-    timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-    location: "C-Block, 3rd Floor Staircase",
-  },
-  {
-    id: "2",
-    type: "Gas Leak",
-    message: "Strong gas smell near D-block ground floor. Everyone please stay alert.",
-    author: "security_guard",
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    location: "D-Block, Ground Floor",
-  },
-];
+const CONTACT_TYPE_ICON: Record<string, typeof Phone> = {
+  police: Shield,
+  fire: Flame,
+  ambulance: Stethoscope,
+  security: Shield,
+  other: Phone,
+};
+
+const CONTACT_TYPE_COLOR: Record<string, string> = {
+  police: "text-primary",
+  fire: "text-danger",
+  ambulance: "text-success",
+  security: "text-accent",
+  other: "text-warning",
+};
+
+const CONTACT_TYPE_BG: Record<string, string> = {
+  police: "bg-primary/10",
+  fire: "bg-danger/10",
+  ambulance: "bg-success/10",
+  security: "bg-accent/10",
+  other: "bg-warning/10",
+};
+
+function formatAlertAuthor(alert: SOSAlert): string {
+  if (alert.author?.full_name) {
+    const parts: string[] = [alert.author.full_name];
+    if (alert.author.flat_no) {
+      parts.push(
+        alert.author.block
+          ? `${alert.author.block}-${alert.author.flat_no}`
+          : alert.author.flat_no
+      );
+    }
+    return parts.join(", ");
+  }
+  return "Member";
+}
 
 export default function SOSPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [alerts, setAlerts] = useState<SOSAlert[]>(DEMO_ALERTS);
+  const { user, profile, loading, supabase } = useUser();
+  const [alerts, setAlerts] = useState<SOSAlert[]>([]);
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [showSOS, setShowSOS] = useState(false);
   const [selectedType, setSelectedType] = useState(SOS_TYPES[0]);
   const [message, setMessage] = useState("");
   const [location, setLocation] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [fetching, setFetching] = useState(true);
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
+  // Fetch recent SOS alerts
+  const fetchAlerts = useCallback(async () => {
+    if (!profile?.society_id) return;
+
+    const { data, error } = await supabase
+      .from("sos_alerts")
+      .select(
+        "*, author:profiles(full_name, avatar_url, flat_no, block)"
+      )
+      .eq("society_id", profile.society_id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error("Error fetching SOS alerts:", error);
       return;
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoading(false);
-    });
-  }, []);
 
-  const handleSendSOS = () => {
-    if (!message.trim()) return;
-    const alert: SOSAlert = {
-      id: Date.now().toString(),
+    setAlerts((data as SOSAlert[]) || []);
+  }, [profile?.society_id, supabase]);
+
+  // Fetch emergency contacts
+  const fetchContacts = useCallback(async () => {
+    if (!profile?.society_id) return;
+
+    const { data, error } = await supabase
+      .from("emergency_contacts")
+      .select("*")
+      .eq("society_id", profile.society_id);
+
+    if (error) {
+      console.error("Error fetching emergency contacts:", error);
+      return;
+    }
+
+    setContacts((data as EmergencyContact[]) || []);
+  }, [profile?.society_id, supabase]);
+
+  // Initial data fetch
+  useEffect(() => {
+    if (!loading && profile?.society_id && user) {
+      Promise.all([fetchAlerts(), fetchContacts()]).then(() =>
+        setFetching(false)
+      );
+    } else if (!loading) {
+      setFetching(false);
+    }
+  }, [loading, profile?.society_id, user, fetchAlerts, fetchContacts]);
+
+  // Real-time subscription for new SOS alerts
+  useEffect(() => {
+    if (!profile?.society_id || !user) return;
+
+    const channel = supabase
+      .channel("sos-alerts-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "sos_alerts",
+          filter: `society_id=eq.${profile.society_id}`,
+        },
+        async (payload) => {
+          const newAlertRaw = payload.new as SOSAlert;
+
+          // Fetch the full alert with author info
+          const { data: fullAlert } = await supabase
+            .from("sos_alerts")
+            .select(
+              "*, author:profiles(full_name, avatar_url, flat_no, block)"
+            )
+            .eq("id", newAlertRaw.id)
+            .single();
+
+          if (fullAlert) {
+            setAlerts((prev) => {
+              if (prev.some((a) => a.id === fullAlert.id)) return prev;
+              return [fullAlert as SOSAlert, ...prev];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.society_id, user, supabase]);
+
+  // Send SOS alert
+  const handleSendSOS = async () => {
+    if (!message.trim() || !user || !profile?.society_id) return;
+
+    setSending(true);
+
+    const { error } = await supabase.from("sos_alerts").insert({
+      society_id: profile.society_id,
+      author_id: user.id,
       type: selectedType,
       message: message.trim(),
-      author: user?.email?.split("@")[0] || "user",
-      timestamp: new Date().toISOString(),
-      location: location.trim() || "Not specified",
-    };
-    setAlerts((prev) => [alert, ...prev]);
+      location: location.trim() || null,
+    });
+
+    setSending(false);
+
+    if (error) {
+      console.error("Error sending SOS alert:", error);
+      return;
+    }
+
     setSent(true);
     setTimeout(() => {
       setSent(false);
@@ -153,7 +255,8 @@ export default function SOSPage() {
     }, 2000);
   };
 
-  if (loading) {
+  // Loading state
+  if (loading || fetching) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -161,10 +264,38 @@ export default function SOSPage() {
     );
   }
 
+  // Not authenticated
   if (!user) {
     if (typeof window !== "undefined") window.location.href = "/auth";
     return null;
   }
+
+  // No society set up yet
+  if (!profile?.society_id) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-sm rounded-xl border border-border bg-surface p-8 text-center">
+          <AlertTriangle size={32} className="mx-auto mb-3 text-muted" />
+          <h2 className="mb-2 text-lg font-bold text-foreground">
+            Set Up Your Profile
+          </h2>
+          <p className="mb-4 text-sm text-muted">
+            You need to join a society before you can use Emergency SOS.
+            Please set up your profile first.
+          </p>
+          <a
+            href="/profile"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            Go to Profile
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Determine which contacts to display
+  const hasDbContacts = contacts.length > 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -250,11 +381,15 @@ export default function SOSPage() {
 
             <button
               onClick={handleSendSOS}
-              disabled={!message.trim()}
+              disabled={!message.trim() || sending}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-danger py-3 text-sm font-bold text-white transition-colors hover:bg-danger/90 disabled:opacity-50"
             >
-              <Siren size={18} />
-              SEND ALERT TO ALL MEMBERS
+              {sending ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <Siren size={18} />
+              )}
+              {sending ? "SENDING..." : "SEND ALERT TO ALL MEMBERS"}
             </button>
           </div>
         )}
@@ -277,31 +412,66 @@ export default function SOSPage() {
           Emergency Contacts
         </h2>
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {EMERGENCY_CONTACTS.map((c) => {
-            const Icon = c.icon;
-            return (
-              <a
-                key={c.id}
-                href={`tel:${c.number.replace(/\s/g, "")}`}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-surface p-4 transition-all hover:border-primary/30 hover:shadow-sm"
-              >
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-full ${c.bg}`}
-                >
-                  <Icon size={20} className={c.color} />
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-foreground">
-                    {c.name}
-                  </p>
-                  <p className="text-[10px] text-muted">{c.nameHi}</p>
-                  <p className="mt-0.5 text-xs font-bold text-primary">
-                    {c.number}
-                  </p>
-                </div>
-              </a>
-            );
-          })}
+          {hasDbContacts
+            ? contacts.map((c) => {
+                const Icon =
+                  CONTACT_TYPE_ICON[c.type] || Phone;
+                const color =
+                  CONTACT_TYPE_COLOR[c.type] || "text-muted";
+                const bg =
+                  CONTACT_TYPE_BG[c.type] || "bg-surface";
+                return (
+                  <a
+                    key={c.id}
+                    href={`tel:${c.phone.replace(/\s/g, "")}`}
+                    className="flex flex-col items-center gap-2 rounded-xl border border-border bg-surface p-4 transition-all hover:border-primary/30 hover:shadow-sm"
+                  >
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full ${bg}`}
+                    >
+                      <Icon size={20} className={color} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-semibold text-foreground">
+                        {c.name}
+                      </p>
+                      {c.name_hi && (
+                        <p className="text-[10px] text-muted">
+                          {c.name_hi}
+                        </p>
+                      )}
+                      <p className="mt-0.5 text-xs font-bold text-primary">
+                        {c.phone}
+                      </p>
+                    </div>
+                  </a>
+                );
+              })
+            : NATIONAL_EMERGENCY_CONTACTS.map((c) => {
+                const Icon = c.icon;
+                return (
+                  <a
+                    key={c.id}
+                    href={`tel:${c.number.replace(/\s/g, "")}`}
+                    className="flex flex-col items-center gap-2 rounded-xl border border-border bg-surface p-4 transition-all hover:border-primary/30 hover:shadow-sm"
+                  >
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-full ${c.bg}`}
+                    >
+                      <Icon size={20} className={c.color} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-semibold text-foreground">
+                        {c.name}
+                      </p>
+                      <p className="text-[10px] text-muted">{c.nameHi}</p>
+                      <p className="mt-0.5 text-xs font-bold text-primary">
+                        {c.number}
+                      </p>
+                    </div>
+                  </a>
+                );
+              })}
         </div>
 
         {/* Recent Alerts */}
@@ -309,32 +479,45 @@ export default function SOSPage() {
           Recent Alerts
         </h2>
         <div className="space-y-3">
-          {alerts.map((a) => (
-            <div
-              key={a.id}
-              className="rounded-xl border border-danger/20 bg-danger/5 p-4"
-            >
-              <div className="mb-1 flex items-center gap-2">
-                <AlertTriangle size={14} className="text-danger" />
-                <span className="text-xs font-bold text-danger">{a.type}</span>
-                <span className="text-[10px] text-muted">by {a.author}</span>
-              </div>
-              <p className="mb-2 text-sm text-foreground">{a.message}</p>
-              <div className="flex items-center gap-3 text-[10px] text-muted">
-                <span className="flex items-center gap-1">
-                  <MapPin size={10} />
-                  {a.location}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock size={10} />
-                  {new Date(a.timestamp).toLocaleTimeString("en-IN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
+          {alerts.length === 0 ? (
+            <div className="rounded-xl border border-border bg-surface p-8 text-center">
+              <AlertTriangle size={32} className="mx-auto mb-2 text-muted" />
+              <p className="text-sm text-muted">
+                No recent alerts. Stay safe!
+              </p>
             </div>
-          ))}
+          ) : (
+            alerts.map((a) => (
+              <div
+                key={a.id}
+                className="rounded-xl border border-danger/20 bg-danger/5 p-4"
+              >
+                <div className="mb-1 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-danger" />
+                  <span className="text-xs font-bold text-danger">
+                    {a.type}
+                  </span>
+                  <span className="text-[10px] text-muted">
+                    by {formatAlertAuthor(a)}
+                  </span>
+                </div>
+                <p className="mb-2 text-sm text-foreground">{a.message}</p>
+                <div className="flex items-center gap-3 text-[10px] text-muted">
+                  <span className="flex items-center gap-1">
+                    <MapPin size={10} />
+                    {a.location || "Not specified"}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} />
+                    {new Date(a.created_at).toLocaleTimeString("en-IN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
+import { useEffect, useState, useCallback } from "react";
+import { useUser } from "@/hooks/useUser";
+import type { Vendor } from "@/types/database";
 import {
   ArrowLeft,
   Phone,
@@ -20,18 +20,16 @@ import {
   ShoppingBag,
 } from "lucide-react";
 
-interface Vendor {
-  id: string;
-  name: string;
-  nameHi: string;
-  category: string;
-  icon: typeof Milk;
-  phone: string;
-  timing: string;
-  status: "available" | "on_the_way" | "done_for_today" | "holiday";
-  rating: number;
-  area: string;
-}
+const CATEGORY_ICONS: Record<string, typeof Milk> = {
+  Milk,
+  Vegetables: Leaf,
+  Eggs: Egg,
+  Barber: Scissors,
+  Plumber: Wrench,
+  Laundry: Shirt,
+  Grocery: ShoppingBag,
+  "Gas Cylinder": Truck,
+};
 
 const STATUS_CONFIG = {
   available: { label: "Available", color: "text-success", bg: "bg-success/10", dot: "bg-success" },
@@ -40,125 +38,45 @@ const STATUS_CONFIG = {
   holiday: { label: "Holiday", color: "text-danger", bg: "bg-danger/10", dot: "bg-danger" },
 };
 
-const DEMO_VENDORS: Vendor[] = [
-  {
-    id: "1",
-    name: "Ramesh Dairy",
-    nameHi: "रमेश डेयरी",
-    category: "Milk",
-    icon: Milk,
-    phone: "+91 98765 43210",
-    timing: "5:30 AM – 7:30 AM",
-    status: "on_the_way",
-    rating: 4.5,
-    area: "A, B, C Block",
-  },
-  {
-    id: "2",
-    name: "Santosh Sabziwala",
-    nameHi: "संतोष सब्ज़ीवाला",
-    category: "Vegetables",
-    icon: Leaf,
-    phone: "+91 98765 43211",
-    timing: "7:00 AM – 10:00 AM",
-    status: "available",
-    rating: 4.2,
-    area: "All Blocks",
-  },
-  {
-    id: "3",
-    name: "Anda Wala Bhaiya",
-    nameHi: "अंडा वाला भैया",
-    category: "Eggs",
-    icon: Egg,
-    phone: "+91 98765 43212",
-    timing: "6:00 AM – 9:00 AM",
-    status: "done_for_today",
-    rating: 4.0,
-    area: "Gate 1 entrance",
-  },
-  {
-    id: "4",
-    name: "Suresh Barber",
-    nameHi: "सुरेश नाई",
-    category: "Barber",
-    icon: Scissors,
-    phone: "+91 98765 43213",
-    timing: "9:00 AM – 7:00 PM",
-    status: "available",
-    rating: 4.3,
-    area: "Shop #3, Market Area",
-  },
-  {
-    id: "5",
-    name: "Sharma Plumber",
-    nameHi: "शर्मा प्लम्बर",
-    category: "Plumber",
-    icon: Wrench,
-    phone: "+91 98765 43214",
-    timing: "On Call",
-    status: "available",
-    rating: 3.8,
-    area: "All Blocks",
-  },
-  {
-    id: "6",
-    name: "Quick Drycleaner",
-    nameHi: "क्विक ड्राई क्लीनर",
-    category: "Laundry",
-    icon: Shirt,
-    phone: "+91 98765 43215",
-    timing: "Pickup 8 AM, Delivery 6 PM",
-    status: "available",
-    rating: 4.1,
-    area: "D, E Block",
-  },
-  {
-    id: "7",
-    name: "BigBasket Local",
-    nameHi: "बिग बास्केट लोकल",
-    category: "Grocery",
-    icon: ShoppingBag,
-    phone: "+91 98765 43216",
-    timing: "8:00 AM – 9:00 PM",
-    status: "available",
-    rating: 4.4,
-    area: "Home Delivery",
-  },
-  {
-    id: "8",
-    name: "Raju Gas Agency",
-    nameHi: "राजू गैस एजेंसी",
-    category: "Gas Cylinder",
-    icon: Truck,
-    phone: "+91 98765 43217",
-    timing: "10:00 AM – 5:00 PM",
-    status: "holiday",
-    rating: 3.9,
-    area: "All Blocks",
-  },
-];
-
 export default function VendorsPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, profile, loading, supabase } = useUser();
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [fetching, setFetching] = useState(true);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
+  const fetchVendors = useCallback(async () => {
+    if (!profile?.society_id) return;
+
+    setFetching(true);
+
+    const { data, error } = await supabase
+      .from("vendors")
+      .select("*")
+      .eq("society_id", profile.society_id)
+      .order("category");
+
+    if (error) {
+      console.error("Error fetching vendors:", error);
+      setFetching(false);
       return;
     }
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setLoading(false);
-    });
-  }, []);
 
-  const filtered = DEMO_VENDORS.filter(
+    setVendors((data as Vendor[]) || []);
+    setFetching(false);
+  }, [profile?.society_id, supabase]);
+
+  useEffect(() => {
+    if (!loading && profile?.society_id) {
+      fetchVendors();
+    } else if (!loading) {
+      setFetching(false);
+    }
+  }, [loading, profile?.society_id, fetchVendors]);
+
+  const filtered = vendors.filter(
     (v) =>
       v.name.toLowerCase().includes(search.toLowerCase()) ||
-      v.nameHi.includes(search) ||
+      (v.name_hi && v.name_hi.includes(search)) ||
       v.category.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -173,6 +91,29 @@ export default function VendorsPage() {
   if (!user) {
     if (typeof window !== "undefined") window.location.href = "/auth";
     return null;
+  }
+
+  if (!profile?.society_id) {
+    return (
+      <div className="min-h-screen bg-background">
+        <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
+          <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
+            <a
+              href="/dashboard"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface hover:text-foreground"
+            >
+              <ArrowLeft size={20} />
+            </a>
+            <h1 className="text-lg font-bold text-foreground">Vendor Tracker</h1>
+          </div>
+        </nav>
+        <div className="mx-auto max-w-2xl px-4 py-4">
+          <div className="rounded-xl border border-border bg-surface p-8 text-center">
+            <p className="text-sm text-muted">Set up profile first</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -217,7 +158,15 @@ export default function VendorsPage() {
 
         {/* Vendor Cards */}
         <div className="space-y-3">
-          {filtered.length === 0 ? (
+          {fetching ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : vendors.length === 0 ? (
+            <div className="rounded-xl border border-border bg-surface p-8 text-center">
+              <p className="text-sm text-muted">No vendors added yet.</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="rounded-xl border border-border bg-surface p-8 text-center">
               <Search size={32} className="mx-auto mb-2 text-muted" />
               <p className="text-sm text-muted">No vendors found.</p>
@@ -225,7 +174,7 @@ export default function VendorsPage() {
           ) : (
             filtered.map((v) => {
               const status = STATUS_CONFIG[v.status];
-              const Icon = v.icon;
+              const Icon = CATEGORY_ICONS[v.category] || ShoppingBag;
 
               return (
                 <div
@@ -249,17 +198,21 @@ export default function VendorsPage() {
                           {status.label}
                         </span>
                       </div>
-                      <p className="text-xs text-muted">{v.nameHi}</p>
+                      {v.name_hi && <p className="text-xs text-muted">{v.name_hi}</p>}
 
                       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                        <span className="flex items-center gap-1">
-                          <Clock size={12} />
-                          {v.timing}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin size={12} />
-                          {v.area}
-                        </span>
+                        {v.timing && (
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} />
+                            {v.timing}
+                          </span>
+                        )}
+                        {v.area && (
+                          <span className="flex items-center gap-1">
+                            <MapPin size={12} />
+                            {v.area}
+                          </span>
+                        )}
                         <span className="flex items-center gap-1">
                           <Star size={12} className="text-warning" />
                           {v.rating}

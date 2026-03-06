@@ -28,12 +28,20 @@ export default function Home() {
               My<span className="text-primary">Society</span>
             </span>
           </div>
-          <a
-            href="/auth"
-            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
-          >
-            Get Started
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="/auth"
+              className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface"
+            >
+              Sign In
+            </a>
+            <a
+              href="/auth/signup"
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+            >
+              Sign Up
+            </a>
+          </div>
         </div>
       </nav>
 
@@ -57,7 +65,7 @@ export default function Home() {
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
-              href="/auth"
+              href="/auth/signup"
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-3.5 text-base font-medium text-white transition-colors hover:bg-primary-hover"
             >
               Join Your Society
@@ -346,7 +354,7 @@ export default function Home() {
             hassle.
           </p>
           <a
-            href="/auth"
+            href="/auth/signup"
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-4 text-lg font-medium text-white transition-colors hover:bg-primary-hover"
           >
             Get Started — It&apos;s Free
